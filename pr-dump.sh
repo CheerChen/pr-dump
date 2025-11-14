@@ -13,7 +13,7 @@
 #   - git: Must be inside the repository's directory.
 # ==============================================================================
 
-VERSION="0.1.0"
+VERSION="0.1.1"
 
 # Default values
 OUTPUT_FILE="review.txt"
@@ -173,8 +173,8 @@ log_info "Output format: $OUTPUT_FORMAT"
 
 # --- 2. Fetch PR Information ---
 
-log_info "Fetching PR metadata (owner, repo, base branch)..."
-PR_INFO=$(gh pr view "$PR_NUMBER" --json headRepositoryOwner,headRepository,baseRefName 2>&1)
+log_info "Fetching PR metadata (owner, repo, base branch, head ref)..."
+PR_INFO=$(gh pr view "$PR_NUMBER" --json headRepositoryOwner,headRepository,baseRefName,headRefName,headRefOid 2>&1)
 
 # Check for specific error cases
 if echo "$PR_INFO" | grep -q "pull request not found" 2>/dev/null; then
@@ -205,8 +205,11 @@ fi
 OWNER=$(echo "$PR_INFO" | jq -r '.headRepositoryOwner.login' 2>/dev/null)
 REPO=$(echo "$PR_INFO" | jq -r '.headRepository.name' 2>/dev/null)
 BASE_BRANCH=$(echo "$PR_INFO" | jq -r '.baseRefName' 2>/dev/null)
+HEAD_BRANCH=$(echo "$PR_INFO" | jq -r '.headRefName' 2>/dev/null)
+HEAD_SHA=$(echo "$PR_INFO" | jq -r '.headRefOid' 2>/dev/null)
 
-if [ -z "$OWNER" ] || [ -z "$REPO" ] || [ -z "$BASE_BRANCH" ] || [ "$OWNER" = "null" ] || [ "$REPO" = "null" ] || [ "$BASE_BRANCH" = "null" ]; then
+if [ -z "$OWNER" ] || [ -z "$REPO" ] || [ -z "$BASE_BRANCH" ] || [ -z "$HEAD_BRANCH" ] || [ -z "$HEAD_SHA" ] || \
+   [ "$OWNER" = "null" ] || [ "$REPO" = "null" ] || [ "$BASE_BRANCH" = "null" ] || [ "$HEAD_BRANCH" = "null" ] || [ "$HEAD_SHA" = "null" ]; then
     log_error "Could not parse repository details from PR response."
     echo "This might indicate:"
     echo "  - Invalid PR number"
@@ -217,7 +220,7 @@ if [ -z "$OWNER" ] || [ -z "$REPO" ] || [ -z "$BASE_BRANCH" ] || [ "$OWNER" = "n
     exit 1
 fi
 
-log_info "Repository: $OWNER/$REPO, Base Branch: $BASE_BRANCH"
+log_info "Repository: $OWNER/$REPO, Base Branch: $BASE_BRANCH, Head Branch: $HEAD_BRANCH"
 
 # --- 3. Fetch All Context Components ---
 
@@ -248,12 +251,17 @@ REVIEWS=$(gh api --paginate "/repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews"
   tr -d '\r')
 
 # Generate Diff Content
-log_info "Generating diff from base branch '${BASE_BRANCH}'..."
+log_info "Generating diff from base branch '${BASE_BRANCH}' to PR head '${HEAD_SHA}'..."
+# Fetch the PR's head ref to ensure we have the exact commits
+if ! git fetch origin "${HEAD_BRANCH}" &> /dev/null; then
+    log_error "Failed to fetch PR head branch '${HEAD_BRANCH}'. Continuing with current state..."
+fi
 # Ensure the local git remote is up to date with the base branch
 if ! git fetch origin "${BASE_BRANCH}" &> /dev/null; then
     log_error "Failed to fetch base branch '${BASE_BRANCH}'. Continuing with current state..."
 fi
-DIFF_CONTENT=$(git diff "origin/${BASE_BRANCH}"...HEAD 2>/dev/null)
+# Use the exact commit SHA from the PR to generate diff
+DIFF_CONTENT=$(git diff "origin/${BASE_BRANCH}...${HEAD_SHA}" 2>/dev/null)
 if [ -z "$DIFF_CONTENT" ]; then
     DIFF_CONTENT="[No differences found or error generating diff]"
 fi
