@@ -24,6 +24,7 @@ pr-dump 568
 - **LLM-Ready**: Outputs structured text perfect for AI code review
 - **Bot-Free**: Automatically filters out bot comments
 - **Fast**: Single command to gather everything you need
+- **Flexible Diff Modes**: Full, compact (paths + line numbers), or stat-only output
 
 ## Installation
 
@@ -65,6 +66,8 @@ pr-dump <PR_NUMBER>
 
 # Advanced options
 pr-dump --output pr123.md --format markdown 123
+pr-dump --diff-mode compact 123  # Paths + line numbers only
+pr-dump --diff-mode stat 123     # Statistics only
 pr-dump --verbose 42
 pr-dump --help
 ```
@@ -77,6 +80,10 @@ pr-dump 123
 
 # Custom output file and markdown format
 pr-dump -o review.md -f markdown 456
+
+# Compact diff mode - ideal when LLM is already in project directory
+# Outputs only file paths and line numbers, reducing token consumption
+pr-dump -d compact 789
 ```
 
 **Output**: Creates `review.txt` (or custom filename) with complete PR context.

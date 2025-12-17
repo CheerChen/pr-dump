@@ -24,6 +24,7 @@ pr-dump 568
 - **AI Ready**：输出适合 AI 代码审查的结构化文本
 - **无 Bot 干扰**：自动过滤 Bot(`pr-agent`) 评论
 - **快速**：一条命令获取所有需要的信息
+- **灵活的 Diff 模式**：支持完整输出、精简（路径+行号）或仅统计信息
 
 ## 安装方法
 
@@ -68,8 +69,18 @@ pr-dump <PR编号>
 
 # 高级选项
 pr-dump --output pr568.md --format markdown 568
+pr-dump --diff-mode compact 568  # 仅输出文件路径和行号
+pr-dump --diff-mode stat 568     # 仅输出统计信息
 pr-dump --help
 ```
+
+### Diff 输出模式
+
+| 模式 | 说明 | 适用场景 |
+|------|------|----------|
+| `full` (默认) | 完整的 diff 输出 | LLM 需要查看所有代码变更 |
+| `compact` | 仅文件路径、行号和函数上下文 | LLM 已在目标工程目录，可自行读取文件 |
+| `stat` | 仅文件变更统计 | 快速了解 PR 规模 |
 
 ## 输出示例
 

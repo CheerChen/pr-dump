@@ -13,11 +13,12 @@
 #   - git: Must be inside the repository's directory.
 # ==============================================================================
 
-VERSION="0.1.1"
+VERSION="0.2.0"
 
 # Default values
 OUTPUT_FILE="review.txt"
 OUTPUT_FORMAT="text"
+DIFF_MODE="full"
 VERBOSE=false
 
 # --- Helper Functions ---
@@ -32,20 +33,31 @@ USAGE:
 OPTIONS:
     -o, --output FILE       Output file name (default: review.txt)
     -f, --format FORMAT     Output format: text, markdown (default: text)
+    -d, --diff-mode MODE    Diff output mode (default: full)
+                              full    - Complete diff with all code changes
+                              compact - Only file paths, line numbers, and context
+                              stat    - Only file change statistics
     -v, --verbose           Show detailed progress information
     -h, --help              Show this help message
     --version               Show version information
 
 EXAMPLES:
-    pr-dump 123                    # Basic usage
-    pr-dump -o pr123.txt 123       # Custom output file
-    pr-dump -f markdown 123        # Markdown format
-    pr-dump -v --output pr.md 123  # Verbose with custom output
+    pr-dump 123                       # Basic usage
+    pr-dump -o pr123.txt 123          # Custom output file
+    pr-dump -f markdown 123           # Markdown format
+    pr-dump -d compact 123            # Compact diff (paths + line numbers only)
+    pr-dump -d stat 123               # Statistics only
+    pr-dump -v --output pr.md 123     # Verbose with custom output
 
 REQUIREMENTS:
     - gh (GitHub CLI) - authenticated
     - jq (JSON processor)
     - git repository (run from repo directory)
+
+NOTES:
+    Use --diff-mode compact when LLM is already in the target project directory.
+    This reduces token consumption by showing only file paths and line ranges,
+    allowing LLM to read the actual files directly.
 
 For more information, visit: https://github.com/CheerChen/pr-dump
 EOF
@@ -87,6 +99,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -f|--format)
             OUTPUT_FORMAT="$2"
+            shift 2
+            ;;
+        -d|--diff-mode)
+            DIFF_MODE="$2"
             shift 2
             ;;
         -v|--verbose)
@@ -167,9 +183,16 @@ if [[ "$OUTPUT_FORMAT" != "text" && "$OUTPUT_FORMAT" != "markdown" ]]; then
     exit 1
 fi
 
+# Validate diff mode
+if [[ "$DIFF_MODE" != "full" && "$DIFF_MODE" != "compact" && "$DIFF_MODE" != "stat" ]]; then
+    log_error "Invalid diff mode '$DIFF_MODE'. Supported modes: full, compact, stat"
+    exit 1
+fi
+
 echo "🚀 Starting context generation for PR #${PR_NUMBER}..."
 log_info "Output file: $OUTPUT_FILE"
 log_info "Output format: $OUTPUT_FORMAT"
+log_info "Diff mode: $DIFF_MODE"
 
 # --- 2. Fetch PR Information ---
 
@@ -260,8 +283,121 @@ fi
 if ! git fetch origin "${BASE_BRANCH}" &> /dev/null; then
     log_error "Failed to fetch base branch '${BASE_BRANCH}'. Continuing with current state..."
 fi
-# Use the exact commit SHA from the PR to generate diff
-DIFF_CONTENT=$(git diff "origin/${BASE_BRANCH}...${HEAD_SHA}" 2>/dev/null)
+
+# --- Diff Generation Functions ---
+
+# Generate compact diff: file paths + line numbers + function context
+generate_compact_diff() {
+    local diff_ref="origin/${BASE_BRANCH}...${HEAD_SHA}"
+    local result=""
+    local current_file=""
+    local hunk_num=0
+    
+    # Get diff with no context lines to extract precise line numbers
+    local raw_diff
+    raw_diff=$(git diff -U0 "$diff_ref" 2>/dev/null)
+    
+    if [ -z "$raw_diff" ]; then
+        echo "[No differences found or error generating diff]"
+        return
+    fi
+    
+    # Parse the diff output
+    while IFS= read -r line; do
+        # Match file header: diff --git a/path b/path
+        if [[ "$line" =~ ^diff\ --git\ a/(.+)\ b/(.+)$ ]]; then
+            current_file="${BASH_REMATCH[2]}"
+            hunk_num=0
+            result+="${current_file}\n"
+        # Match hunk header: @@ -old_start,old_count +new_start,new_count @@ [context]
+        elif [[ "$line" =~ ^@@\ -([0-9]+)(,([0-9]+))?\ \+([0-9]+)(,([0-9]+))?\ @@(.*)$ ]]; then
+            hunk_num=$((hunk_num + 1))
+            local old_start="${BASH_REMATCH[1]}"
+            local old_count="${BASH_REMATCH[3]:-1}"
+            local new_start="${BASH_REMATCH[4]}"
+            local new_count="${BASH_REMATCH[6]:-1}"
+            local context="${BASH_REMATCH[7]}"
+            
+            # Calculate end lines
+            local old_end=$((old_start + old_count - 1))
+            local new_end=$((new_start + new_count - 1))
+            
+            # Handle edge cases where count is 0 (pure addition/deletion)
+            if [ "$old_count" -eq 0 ]; then
+                old_end=$old_start
+            fi
+            if [ "$new_count" -eq 0 ]; then
+                new_end=$new_start
+            fi
+            
+            # Format: hunk N: lines X-Y (was A-B, +added/-removed) @ context
+            local change_info="+${new_count}/-${old_count}"
+            if [ -n "$context" ] && [ "$context" != " " ]; then
+                # Trim leading space from context
+                context="${context# }"
+                result+="  hunk ${hunk_num}: lines ${new_start}-${new_end} (was ${old_start}-${old_end}, ${change_info}) @ ${context}\n"
+            else
+                result+="  hunk ${hunk_num}: lines ${new_start}-${new_end} (was ${old_start}-${old_end}, ${change_info})\n"
+            fi
+        fi
+    done <<< "$raw_diff"
+    
+    # Add summary statistics
+    local stat_summary
+    stat_summary=$(git diff --shortstat "$diff_ref" 2>/dev/null)
+    if [ -n "$stat_summary" ]; then
+        result+="\nSummary:${stat_summary}\n"
+    fi
+    
+    printf "%b" "$result"
+}
+
+# Generate stat-only diff: file statistics only
+generate_stat_diff() {
+    local diff_ref="origin/${BASE_BRANCH}...${HEAD_SHA}"
+    local stat_output
+    
+    stat_output=$(git diff --stat "$diff_ref" 2>/dev/null)
+    
+    if [ -z "$stat_output" ]; then
+        echo "[No differences found or error generating diff]"
+        return
+    fi
+    
+    echo "$stat_output"
+}
+
+# Generate full diff content
+generate_full_diff() {
+    local diff_ref="origin/${BASE_BRANCH}...${HEAD_SHA}"
+    local diff_output
+    
+    diff_output=$(git diff "$diff_ref" 2>/dev/null)
+    
+    if [ -z "$diff_output" ]; then
+        echo "[No differences found or error generating diff]"
+        return
+    fi
+    
+    echo "$diff_output"
+}
+
+# Generate diff based on selected mode
+case "$DIFF_MODE" in
+    compact)
+        log_info "Generating compact diff (paths + line numbers)..."
+        DIFF_CONTENT=$(generate_compact_diff)
+        ;;
+    stat)
+        log_info "Generating stat-only diff..."
+        DIFF_CONTENT=$(generate_stat_diff)
+        ;;
+    *)
+        log_info "Generating full diff..."
+        DIFF_CONTENT=$(generate_full_diff)
+        ;;
+esac
+
 if [ -z "$DIFF_CONTENT" ]; then
     DIFF_CONTENT="[No differences found or error generating diff]"
 fi
