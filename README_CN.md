@@ -10,7 +10,7 @@
 
 ```bash
 # 安装
-brew tap CheerChen/pr-dump
+brew tap CheerChen/tap
 brew install pr-dump
 
 # 在仓库目录内导出PR上下文
@@ -31,7 +31,7 @@ pr-dump 568
 ### 方式一：Homebrew（推荐）
 
 ```bash
-brew tap CheerChen/pr-dump
+brew tap CheerChen/tap
 brew install pr-dump
 ```
 

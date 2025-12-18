@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0] - 2025-12-17
+
+### Added
+- New `--diff-mode` / `-d` option with three modes:
+  - `full` (default): Complete diff with all code changes
+  - `compact`: Only file paths, line numbers, and function context (ideal for LLM when already in project directory)
+  - `stat`: Only file change statistics
+- Compact mode reduces token consumption by showing only file paths and line ranges
+
+### Features
+- `-d, --diff-mode MODE`: Select diff output mode
+
 ## [0.1.1] - 2025-11-14
 
 ### Fixed
