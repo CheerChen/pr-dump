@@ -13,7 +13,10 @@
 brew tap CheerChen/tap
 brew install pr-dump
 
-# 在仓库目录内导出PR上下文
+# 方式一：使用 URL（任何目录下都可用）
+pr-dump https://github.com/owner/repo/pull/568
+
+# 方式二：使用 PR 编号（需要在仓库目录内）
 cd your-repository
 pr-dump 568
 ```
@@ -35,13 +38,6 @@ brew tap CheerChen/tap
 brew install pr-dump
 ```
 
-### 方式二：直接下载
-
-```bash
-curl -O https://raw.githubusercontent.com/CheerChen/pr-dump/master/pr-dump.sh
-chmod +x pr-dump.sh
-```
-
 ### 方式三：安装到系统 PATH
 
 ```bash
@@ -55,32 +51,65 @@ cd pr-dump
 
 ## 使用方法
 
-**⚠️ 重要：必须在目标仓库目录内执行**
+### 两种输入模式
+
+**1. URL 模式（任何目录下都可用）**
 
 ```bash
-# 首先进入你的仓库目录
+pr-dump https://github.com/owner/repo/pull/123
+pr-dump -f markdown https://github.com/owner/repo/pull/568
+```
+
+**2. PR 编号模式（需要在 git 仓库内）**
+
+```bash
 cd /path/to/your/repository
+pr-dump 123
+```
 
-# 基本用法
-pr-dump <PR编号>
+### 基本用法
 
-# 或者使用下载的脚本
-./pr-dump.sh <PR编号>
+```bash
+# URL 模式 - 可在任何目录执行
+pr-dump https://github.com/CheerChen/pr-dump/pull/1
+
+# PR 编号模式 - 必须在仓库目录内
+cd my-awesome-project
+pr-dump 123
 
 # 高级选项
-pr-dump --output pr568.md --format markdown 568
-pr-dump --diff-mode compact 568  # 仅输出文件路径和行号
-pr-dump --diff-mode stat 568     # 仅输出统计信息
-pr-dump --help
+pr-dump --output custom.md --format markdown https://github.com/owner/repo/pull/456
+pr-dump --diff-mode compact 123  # 仅输出文件路径和行号
+pr-dump --diff-mode stat 123     # 仅输出统计信息
+pr-dump --verbose https://github.com/owner/repo/pull/789
 ```
+
+**使用示例：**
+
+```bash
+# URL 模式 - 无需克隆即可分析任何公开 PR
+pr-dump https://github.com/facebook/react/pull/12345
+
+# 在你的仓库中使用 PR 编号
+cd my-project
+pr-dump 123                              # 输出: pr-123.txt
+pr-dump -f markdown 456                  # 输出: pr-456.md
+pr-dump -o review.md 789                 # 输出: review.md
+
+# 精简 diff 模式 - 适合 LLM 已在项目目录的情况
+# 仅输出文件路径和行号，减少 token 消耗
+pr-dump -d compact 789
+```
+
+**输出**：生成 `pr-<编号>.txt`（markdown 格式为 `pr-<编号>.md`，或自定义文件名）,包含完整 PR 上下文。
 
 ### Diff 输出模式
 
-| 模式 | 说明 | 适用场景 |
-|------|------|----------|
-| `full` (默认) | 完整的 diff 输出 | LLM 需要查看所有代码变更 |
-| `compact` | 仅文件路径、行号和函数上下文 | LLM 已在目标工程目录，可自行读取文件 |
-| `stat` | 仅文件变更统计 | 快速了解 PR 规模 |
+| 模式            | 说明                         | 适用场景                             |
+| --------------- | ---------------------------- | ------------------------------------ |
+| `full` (默认) | 完整的 diff 输出             | LLM 需要查看所有代码变更             |
+| `compact`     | 仅文件路径、行号和函数上下文 | LLM 已在目标工程目录，可自行读取文件 |
+| `stat`        | 仅文件变更统计               | 快速了解 PR 规模                     |
 
 ## 输出示例
 
