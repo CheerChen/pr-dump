@@ -10,7 +10,7 @@
 
 ```bash
 # Install
-brew tap CheerChen/pr-dump
+brew tap CheerChen/tap
 brew install pr-dump
 
 # Dump PR context from repository directory
@@ -30,7 +30,7 @@ pr-dump 568
 
 ### Option 1: Homebrew (Recommended)
 ```bash
-brew tap CheerChen/pr-dump
+brew tap CheerChen/tap
 brew install pr-dump
 ```
 

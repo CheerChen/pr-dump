@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# Script: pr-dump.sh (v0.1.0)
+# Script: pr-dump.sh (v0.2.0)
 # Description: Dumps all GitHub Pull Request context (metadata, comments, and 
 #              diff) into a single text file for LLM review.
 #
