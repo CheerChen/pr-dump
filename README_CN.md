@@ -1,5 +1,7 @@
 # pr-dump
 
+> **⚠️ 本项目已合并至 [ctxd](https://github.com/CheerChen/ctxd)，请改用 `ctxd`。此仓库已归档，不再维护。**
+
 > 将 GitHub PR 的所有上下文（元数据、评论、代码变更）导出到单个文本文件中，便于 AI 代码审查。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)

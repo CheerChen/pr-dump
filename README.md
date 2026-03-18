@@ -1,5 +1,7 @@
 # pr-dump
 
+> **⚠️ This project has been merged into [ctxd](https://github.com/CheerChen/ctxd). Please use `ctxd` instead. This repository is archived and no longer maintained.**
+
 > Dump all GitHub PR context (metadata, comments, diffs) into a single text file for LLM review.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
