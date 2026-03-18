@@ -1,22 +1,21 @@
 #!/bin/bash
 
 # ==============================================================================
-# Script: pr-dump.sh (v0.2.0)
+# Script: pr-dump.sh (v0.3.0)
 # Description: Dumps all GitHub Pull Request context (metadata, comments, and 
 #              diff) into a single text file for LLM review.
 #
-# Usage: ./pr-dump.sh [OPTIONS] <PR_NUMBER>
+# Usage: ./pr-dump.sh [OPTIONS] <PR_URL|PR_NUMBER>
 #
 # Requirements:
 #   - gh (GitHub CLI): Authenticated with `gh auth login`.
 #   - jq: A command-line JSON processor.
-#   - git: Must be inside the repository's directory.
 # ==============================================================================
 
-VERSION="0.2.0"
+VERSION="0.3.0"
 
 # Default values
-OUTPUT_FILE="review.txt"
+OUTPUT_FILE=""
 OUTPUT_FORMAT="text"
 DIFF_MODE="full"
 VERBOSE=false
@@ -28,10 +27,14 @@ show_help() {
 pr-dump - Dump GitHub PR context for LLM review
 
 USAGE:
-    pr-dump [OPTIONS] <PR_NUMBER>
+    pr-dump [OPTIONS] <PR_URL|PR_NUMBER>
+
+ARGUMENTS:
+    PR_URL        Full GitHub PR URL (e.g., https://github.com/owner/repo/pull/123)
+    PR_NUMBER     PR number (shorthand, only works inside git repository)
 
 OPTIONS:
-    -o, --output FILE       Output file name (default: review.txt)
+    -o, --output FILE       Output file name (default: pr-<number>.txt or pr-<number>.md)
     -f, --format FORMAT     Output format: text, markdown (default: text)
     -d, --diff-mode MODE    Diff output mode (default: full)
                               full    - Complete diff with all code changes
@@ -42,17 +45,20 @@ OPTIONS:
     --version               Show version information
 
 EXAMPLES:
-    pr-dump 123                       # Basic usage
-    pr-dump -o pr123.txt 123          # Custom output file
-    pr-dump -f markdown 123           # Markdown format
-    pr-dump -d compact 123            # Compact diff (paths + line numbers only)
-    pr-dump -d stat 123               # Statistics only
-    pr-dump -v --output pr.md 123     # Verbose with custom output
+    # URL mode (works anywhere)
+    pr-dump https://github.com/owner/repo/pull/123
+    pr-dump -f markdown https://github.com/owner/repo/pull/123
+    
+    # Number mode (only in git repository)
+    cd /path/to/repo
+    pr-dump 123                       # Output: pr-123.txt
+    pr-dump -f markdown 123           # Output: pr-123.md
+    pr-dump -o custom.txt 123         # Custom output file
+    pr-dump -d compact 123            # Compact diff mode
 
 REQUIREMENTS:
     - gh (GitHub CLI) - authenticated
     - jq (JSON processor)
-    - git repository (run from repo directory)
 
 NOTES:
     Use --diff-mode compact when LLM is already in the target project directory.
@@ -115,10 +121,10 @@ while [[ $# -gt 0 ]]; do
             exit 1
             ;;
         *)
-            if [ -z "$PR_NUMBER" ]; then
-                PR_NUMBER="$1"
+            if [ -z "$PR_INPUT" ]; then
+                PR_INPUT="$1"
             else
-                log_error "Multiple PR numbers provided. Only one is allowed."
+                log_error "Multiple PR URLs/numbers provided. Only one is allowed."
                 exit 1
             fi
             shift
@@ -152,28 +158,45 @@ if ! gh auth status &> /dev/null; then
     exit 1
 fi
 
-# Check if we're in a git repository
-if ! git rev-parse --git-dir &> /dev/null; then
-    log_error "Not in a Git repository."
-    echo "Please run this command from inside a Git repository directory."
-    echo ""
-    echo "If this is your first time:"
-    echo "  cd /path/to/your/repository"
-    echo "  pr-dump <PR_NUMBER>"
-    exit 1
-fi
-
-# Check for PR number argument
-if [ -z "$PR_NUMBER" ]; then
-    log_error "PR number is required."
+# Check for PR input argument
+if [ -z "$PR_INPUT" ]; then
+    log_error "PR URL or number is required."
     echo
     show_help
     exit 1
 fi
 
-# Validate PR number is numeric
-if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
-    log_error "PR number must be a positive integer."
+# Parse PR input (URL or number)
+REPO_FLAG=""
+PARSED_OWNER=""
+PARSED_REPO=""
+if [[ "$PR_INPUT" =~ ^https://github\.com/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
+    # URL format: https://github.com/owner/repo/pull/123
+    PARSED_OWNER="${BASH_REMATCH[1]}"
+    PARSED_REPO="${BASH_REMATCH[2]}"
+    PR_NUMBER="${BASH_REMATCH[3]}"
+    REPO_FLAG="--repo $PARSED_OWNER/$PARSED_REPO"
+    log_info "Parsed PR URL: $PARSED_OWNER/$PARSED_REPO #$PR_NUMBER"
+elif [[ "$PR_INPUT" =~ ^[0-9]+$ ]]; then
+    # Number format: 123 (requires git repository)
+    PR_NUMBER="$PR_INPUT"
+    
+    # Check if we're in a git repository
+    if ! git rev-parse --git-dir &> /dev/null; then
+        log_error "Not in a Git repository."
+        echo "When using PR number (without URL), you must be inside a git repository."
+        echo ""
+        echo "Options:"
+        echo "  1. Use full URL: pr-dump https://github.com/owner/repo/pull/$PR_NUMBER"
+        echo "  2. Navigate to repository: cd /path/to/repo && pr-dump $PR_NUMBER"
+        exit 1
+    fi
+    log_info "Using PR number mode in current repository"
+else
+    log_error "Invalid PR input: $PR_INPUT"
+    echo "Expected:"
+    echo "  - GitHub PR URL: https://github.com/owner/repo/pull/123"
+    echo "  - PR number: 123 (when inside git repository)"
     exit 1
 fi
 
@@ -189,6 +212,15 @@ if [[ "$DIFF_MODE" != "full" && "$DIFF_MODE" != "compact" && "$DIFF_MODE" != "st
     exit 1
 fi
 
+# Generate default output filename if not specified
+if [ -z "$OUTPUT_FILE" ]; then
+    if [ "$OUTPUT_FORMAT" = "markdown" ]; then
+        OUTPUT_FILE="pr-${PR_NUMBER}.md"
+    else
+        OUTPUT_FILE="pr-${PR_NUMBER}.txt"
+    fi
+fi
+
 echo "🚀 Starting context generation for PR #${PR_NUMBER}..."
 log_info "Output file: $OUTPUT_FILE"
 log_info "Output format: $OUTPUT_FORMAT"
@@ -197,7 +229,7 @@ log_info "Diff mode: $DIFF_MODE"
 # --- 2. Fetch PR Information ---
 
 log_info "Fetching PR metadata (owner, repo, base branch, head ref)..."
-PR_INFO=$(gh pr view "$PR_NUMBER" --json headRepositoryOwner,headRepository,baseRefName,headRefName,headRefOid 2>&1)
+PR_INFO=$(gh pr view "$PR_NUMBER" $REPO_FLAG --json headRepositoryOwner,headRepository,baseRefName,headRefName,headRefOid 2>&1)
 
 # Check for specific error cases
 if echo "$PR_INFO" | grep -q "pull request not found" 2>/dev/null; then
@@ -227,6 +259,15 @@ fi
 # Parse repository information
 OWNER=$(echo "$PR_INFO" | jq -r '.headRepositoryOwner.login' 2>/dev/null)
 REPO=$(echo "$PR_INFO" | jq -r '.headRepository.name' 2>/dev/null)
+
+# Use parsed values from URL if available (for consistency)
+if [ -n "$PARSED_OWNER" ]; then
+    OWNER="$PARSED_OWNER"
+fi
+if [ -n "$PARSED_REPO" ]; then
+    REPO="$PARSED_REPO"
+fi
+
 BASE_BRANCH=$(echo "$PR_INFO" | jq -r '.baseRefName' 2>/dev/null)
 HEAD_BRANCH=$(echo "$PR_INFO" | jq -r '.headRefName' 2>/dev/null)
 HEAD_SHA=$(echo "$PR_INFO" | jq -r '.headRefOid' 2>/dev/null)
@@ -249,7 +290,7 @@ log_info "Repository: $OWNER/$REPO, Base Branch: $BASE_BRANCH, Head Branch: $HEA
 
 # Fetch Metadata (Title and Body)
 log_info "Fetching title and body..."
-METADATA=$(gh pr view "$PR_NUMBER" --json title,body --jq '"PR Title: \(.title)\n\nPR Body:\n\(.body)"' 2>/dev/null)
+METADATA=$(gh pr view "$PR_NUMBER" $REPO_FLAG --json title,body --jq '"PR Title: \(.title)\n\nPR Body:\n\(.body)"' 2>/dev/null)
 if [ -z "$METADATA" ]; then
     log_error "Failed to fetch PR metadata. Continuing with available data..."
     METADATA="PR Title: [Error fetching title]\n\nPR Body:\n[Error fetching body]"

@@ -13,7 +13,10 @@
 brew tap CheerChen/tap
 brew install pr-dump
 
-# Dump PR context from repository directory
+# Option 1: Use URL (works anywhere)
+pr-dump https://github.com/owner/repo/pull/568
+
+# Option 2: Use PR number (inside repository directory)
 cd your-repository
 pr-dump 568
 ```
@@ -29,18 +32,14 @@ pr-dump 568
 ## Installation
 
 ### Option 1: Homebrew (Recommended)
+
 ```bash
 brew tap CheerChen/tap
 brew install pr-dump
 ```
 
-### Option 2: Direct Download
-```bash
-curl -O https://raw.githubusercontent.com/CheerChen/pr-dump/master/pr-dump.sh
-chmod +x pr-dump.sh
-```
-
 ### Option 3: Install to PATH
+
 ```bash
 git clone https://github.com/CheerChen/pr-dump.git
 cd pr-dump
@@ -52,41 +51,57 @@ cd pr-dump
 
 ## Usage
 
-**⚠️ Important: Run from inside the target repository directory**
+### Two Input Modes
+
+**1. URL Mode (works anywhere)**
 
 ```bash
-# Navigate to your repository first
-cd /path/to/your/repository
-
-# Basic usage (if installed via brew/install.sh)
-pr-dump <PR_NUMBER>
-
-# Or if using downloaded script
-./pr-dump.sh <PR_NUMBER>
-
-# Advanced options
-pr-dump --output pr123.md --format markdown 123
-pr-dump --diff-mode compact 123  # Paths + line numbers only
-pr-dump --diff-mode stat 123     # Statistics only
-pr-dump --verbose 42
-pr-dump --help
+pr-dump https://github.com/owner/repo/pull/123
+pr-dump -f markdown https://github.com/owner/repo/pull/568
 ```
 
-**Examples:**
+**2. Number Mode (requires git repository)**
+
 ```bash
-# Dump context for PR #123
+cd /path/to/your/repository
+pr-dump 123
+```
+
+### Basic Usage
+
+```bash
+# URL mode - works from any directory
+pr-dump https://github.com/CheerChen/pr-dump/pull/1
+
+# Number mode - must be in repository directory
 cd my-awesome-project
 pr-dump 123
 
-# Custom output file and markdown format
-pr-dump -o review.md -f markdown 456
+# Advanced options
+pr-dump --output custom.md --format markdown https://github.com/owner/repo/pull/456
+pr-dump --diff-mode compact 123  # Paths + line numbers only
+pr-dump --diff-mode stat 123     # Statistics only
+pr-dump --verbose https://github.com/owner/repo/pull/789
+```
+
+**Examples:**
+
+```bash
+# URL mode - analyze any public PR without cloning
+pr-dump https://github.com/facebook/react/pull/12345
+
+# Number mode in your repository
+cd my-project
+pr-dump 123                              # Output: pr-123.txt
+pr-dump -f markdown 456                  # Output: pr-456.md
+pr-dump -o review.md 789                 # Output: review.md
 
 # Compact diff mode - ideal when LLM is already in project directory
 # Outputs only file paths and line numbers, reducing token consumption
 pr-dump -d compact 789
 ```
 
-**Output**: Creates `review.txt` (or custom filename) with complete PR context.
+**Output**: Creates `pr-<number>.txt` (or `pr-<number>.md` for markdown format, or custom filename) with complete PR context.
 
 ## Example Output
 

@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.3.0] - 2026-01-20
+
+### Added
+- Support for full GitHub PR URL as input (works anywhere without git repository)
+- Two input modes:
+  - **URL mode**: `pr-dump https://github.com/owner/repo/pull/123` (works anywhere)
+  - **Number mode**: `pr-dump 123` (requires git repository)
+- Smart default output filename: `pr-<number>.txt` or `pr-<number>.md` based on format
+- Enhanced error messages with clear troubleshooting guidance
+
+### Changed
+- Default output filename changed from `review.txt` to `pr-<number>.txt`
+- URL mode no longer requires being inside a git repository
+- Improved repository detection and validation
+- Better error handling with specific error messages
+
+### Improved
+- More flexible usage: can now analyze PRs from any repository without cloning
+- Clearer help documentation with separate argument and option sections
+- Better UX with context-aware error messages
+
 ## [0.2.0] - 2025-12-17
 
 ### Added
