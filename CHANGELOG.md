@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.4.0] - 2026-02-24
+
+### Added
+- `--clean-body` flag (default: **on**): cleans bot-generated HTML noise from PR body
+  - Reformats "File Walkthrough" HTML tables (injected by PR bots such as CodiumAI/pr-agent) into compact plain text: `filename: description (+N/-M)`
+  - Strips `&nbsp;`, HTML tags, and long GitHub diff hash links
+  - Use `--no-clean-body` to opt out
+- Code review comments now grouped by file under `####` headings, preserving conversation order within each file
+- Multi-line comment bodies indented with 2 spaces so code blocks and suggestions stay inside their list item
+- `(line null)` no longer appears for file-level review comments (line number omitted when unavailable)
+
+### Changed
+- Default output format changed from `text` to `markdown` (default output file is now `pr-<number>.md`)
+- Timeline comments and review summaries reformatted: removed `---` separators and redundant `Timeline comment from` / `Review summary from` prefixes; entries separated by blank lines
+
+### Token Impact
+- Typical savings: **~20–25%** fewer tokens vs v0.3.0 on PRs with bot-generated File Walkthrough tables
+
 ## [0.3.0] - 2026-01-20
 
 ### Added

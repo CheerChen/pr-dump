@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# Script: pr-dump.sh (v0.3.0)
+# Script: pr-dump.sh (v0.4.0)
 # Description: Dumps all GitHub Pull Request context (metadata, comments, and 
 #              diff) into a single text file for LLM review.
 #
@@ -12,13 +12,14 @@
 #   - jq: A command-line JSON processor.
 # ==============================================================================
 
-VERSION="0.3.0"
+VERSION="0.4.0"
 
 # Default values
 OUTPUT_FILE=""
-OUTPUT_FORMAT="text"
-DIFF_MODE="full"
+OUTPUT_FORMAT="markdown"
+DIFF_MODE="compact"
 VERBOSE=false
+CLEAN_BODY=true
 
 # --- Helper Functions ---
 
@@ -36,11 +37,15 @@ ARGUMENTS:
 OPTIONS:
     -o, --output FILE       Output file name (default: pr-<number>.txt or pr-<number>.md)
     -f, --format FORMAT     Output format: text, markdown (default: text)
-    -d, --diff-mode MODE    Diff output mode (default: full)
+    -d, --diff-mode MODE    Diff output mode (default: compact)
                               full    - Complete diff with all code changes
                               compact - Only file paths, line numbers, and context
                               stat    - Only file change statistics
     -v, --verbose           Show detailed progress information
+    --clean-body            Clean bot-generated HTML noise from PR body.
+                              Reformats "File Walkthrough" tables to plain text
+                              and strips &nbsp;, HTML tags, GitHub diff links.
+                              (default: on)
     -h, --help              Show this help message
     --version               Show version information
 
@@ -113,6 +118,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         -v|--verbose)
             VERBOSE=true
+            shift
+            ;;
+        --clean-body)
+            CLEAN_BODY=true
+            shift
+            ;;
+        --no-clean-body)
+            CLEAN_BODY=false
             shift
             ;;
         -*)
@@ -286,6 +299,81 @@ fi
 
 log_info "Repository: $OWNER/$REPO, Base Branch: $BASE_BRANCH, Head Branch: $HEAD_BRANCH"
 
+# --- PR Body Cleaning Function ---
+# Phase 1: Detects and reformats bot-generated "File Walkthrough" HTML table
+#          into compact plain text (filename: description (+N/-M)).
+# Phase 2: Strips remaining HTML tags, &nbsp;, and collapses excess blank lines.
+clean_pr_body() {
+    awk '
+    # Extract text between the first occurrence of two delimiter strings
+    function extract(line, open, cls,    p, q) {
+        p = index(line, open)
+        if (p == 0) return ""
+        p += length(open)
+        q = index(substr(line, p), cls)
+        if (q == 0) return ""
+        return substr(line, p, q - 1)
+    }
+    # Count non-overlapping occurrences of tag in a line
+    function count_tag(line, tag,    cnt, rest) {
+        cnt = 0; rest = line
+        while (index(rest, tag) > 0) {
+            cnt++
+            rest = substr(rest, index(rest, tag) + length(tag))
+        }
+        return cnt
+    }
+    BEGIN { in_fw = 0; depth = 0; fname = ""; desc = ""; pending = 0 }
+
+    # --- Phase 1: File Walkthrough block detection ---
+    # Detect the outer <details> block that contains "File Walkthrough"
+    !in_fw && /File Walkthrough/ && /<summary>/ {
+        in_fw = 1; depth = 1
+        print "[File Changes]"
+        next
+    }
+    in_fw {
+        # Track nesting of <details> tags to find the closing </details>
+        depth += count_tag($0, "<details")
+        depth -= count_tag($0, "</details>")
+
+        # File entry line: has <strong> but NOT <details> (skip category headers)
+        if (index($0, "<strong>") > 0 && index($0, "<details") == 0) {
+            fname = extract($0, "<strong>", "</strong>")
+            desc  = extract($0, "<code>",   "</code>")
+            if (fname != "") pending = 1
+        }
+        # Change-count line: <a href="...">+N/-M</a> while a filename is pending
+        if (pending && fname != "" && index($0, "<a href") > 0) {
+            tmp = $0
+            sub(/.*<a [^>]*>/, "", tmp)   # remove everything up to end of <a ...>
+            sub(/<\/a>.*/, "", tmp)       # remove </a> and everything after
+            gsub(/[ \t\r]/, "", tmp)      # strip whitespace
+            if (desc != "")
+                print fname ": " desc " (" tmp ")"
+            else
+                print fname " (" tmp ")"
+            fname = ""; desc = ""; pending = 0
+        }
+        if (depth <= 0) {
+            in_fw = 0; depth = 0; fname = ""; desc = ""; pending = 0
+            print ""
+        }
+        next
+    }
+    { print }
+    ' | \
+    # --- Phase 2: Strip remaining HTML noise ---
+    sed -E \
+        -e 's/<a [^>]*>([^<]*)<\/a>/\1/g' \
+        -e 's/<[^>]+>//g' \
+        -e 's/\&nbsp;//g' \
+        -e 's/\&amp;/\&/g' \
+        -e 's/[[:space:]]+$//' | \
+    # Collapse 3+ consecutive blank lines down to 2
+    awk 'BEGIN{blanks=0} /^[[:space:]]*$/{blanks++; if(blanks<=2) print; next} {blanks=0; print}'
+}
+
 # --- 3. Fetch All Context Components ---
 
 # Fetch Metadata (Title and Body)
@@ -296,22 +384,58 @@ if [ -z "$METADATA" ]; then
     METADATA="PR Title: [Error fetching title]\n\nPR Body:\n[Error fetching body]"
 fi
 
+# Clean bot-generated HTML noise from PR body (opt-in via --clean-body)
+if [ "$CLEAN_BODY" = true ]; then
+    log_info "Cleaning PR body HTML noise..."
+    METADATA=$(echo "$METADATA" | clean_pr_body)
+fi
+
 # Fetch Timeline Comments
 log_info "Fetching timeline comments (all pages)..."
 TIMELINE_COMMENTS=$(gh api --paginate "/repos/${OWNER}/${REPO}/issues/${PR_NUMBER}/comments" 2>/dev/null | \
-  jq -r '.[] | select(.body and .body != "" and (.user.type != "Bot")) | "- Timeline comment from @\(.user.login):\n  \(.body)\n---"' 2>/dev/null | \
+  jq -rs '
+    flatten |
+    map(select(.body and .body != "" and .user.type != "Bot")) |
+    map(
+      "- @" + .user.login + ": " +
+      (.body | split("\n") | join("\n  "))
+    ) |
+    join("\n\n")
+  ' 2>/dev/null | \
   tr -d '\r')
 
-# Fetch Code Review (Diff) Comments
+# Fetch Code Review (Diff) Comments (grouped by file, preserving conversation order)
 log_info "Fetching code review comments (all pages)..."
 DIFF_COMMENTS=$(gh api --paginate "/repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/comments" 2>/dev/null | \
-  jq -r '.[] | select(.body and .body != "" and (.user.type != "Bot")) | "- Code comment from @\(.user.login) on `\(.path)` (line \(.line)):\n  \(.body)\n---"' 2>/dev/null | \
+  jq -rs '
+    flatten |
+    map(select(.body and .body != "" and .user.type != "Bot")) |
+    group_by(.path) |
+    map(
+      "#### `" + .[0].path + "`\n\n" +
+      ( map(
+          "- @" + .user.login +
+          (if .line then " (L" + (.line | tostring) + ")" else "" end) +
+          ": " +
+          (.body | split("\n") | join("\n  "))
+        ) | join("\n") )
+    ) |
+    join("\n\n")
+  ' 2>/dev/null | \
   tr -d '\r')
 
 # Fetch Review Summary Comments
 log_info "Fetching review summaries (all pages)..."
 REVIEWS=$(gh api --paginate "/repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews" 2>/dev/null | \
-  jq -r '.[] | select(.body and .body != "" and (.user.type != "Bot")) | "- Review summary from @\(.user.login) (\(.state)):\n  \(.body)\n---"' 2>/dev/null | \
+  jq -rs '
+    flatten |
+    map(select(.body and .body != "" and .user.type != "Bot")) |
+    map(
+      "- @" + .user.login + " (" + .state + "): " +
+      (.body | split("\n") | join("\n  "))
+    ) |
+    join("\n\n")
+  ' 2>/dev/null | \
   tr -d '\r')
 
 # Generate Diff Content
@@ -494,7 +618,7 @@ format_markdown_output() {
 
     # Append comments with markdown formatting
     if [ -n "$TIMELINE_COMMENTS" ]; then
-        printf "\n### Timeline Comments\n\n%s\n" "$TIMELINE_COMMENTS" >> "$OUTPUT_FILE"
+        printf "### Timeline Comments\n\n%s\n" "$TIMELINE_COMMENTS" >> "$OUTPUT_FILE"
     fi
     if [ -n "$DIFF_COMMENTS" ]; then
         printf "\n### Code Review Comments\n\n%s\n" "$DIFF_COMMENTS" >> "$OUTPUT_FILE"

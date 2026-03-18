@@ -24,8 +24,10 @@ pr-dump 568
 ## 功能特性
 
 - **完整上下文**：获取 PR 元数据、所有评论和 git 差异
-- **AI Ready**：输出适合 AI 代码审查的结构化文本
+- **AI Ready**：输出适合 AI 代码审查的结构化 Markdown
 - **无 Bot 干扰**：自动过滤 Bot(`pr-agent`) 评论
+- **HTML 噪音清理**：自动剥离 PR body 中 Bot 注入的 HTML 表格、`&nbsp;` 和 hash 链接；将 File Walkthrough 重格式化为紧凑纯文本（默认开启）
+- **评论按文件分组**：Code Review 评论按文件归组，保留对话顺序
 - **快速**：一条命令获取所有需要的信息
 - **灵活的 Diff 模式**：支持完整输出、精简（路径+行号）或仅统计信息
 
@@ -78,9 +80,10 @@ cd my-awesome-project
 pr-dump 123
 
 # 高级选项
-pr-dump --output custom.md --format markdown https://github.com/owner/repo/pull/456
+pr-dump --output custom.md https://github.com/owner/repo/pull/456
 pr-dump --diff-mode compact 123  # 仅输出文件路径和行号
 pr-dump --diff-mode stat 123     # 仅输出统计信息
+pr-dump --no-clean-body 123      # 禁用 HTML 噪音清理
 pr-dump --verbose https://github.com/owner/repo/pull/789
 ```
 
@@ -92,8 +95,7 @@ pr-dump https://github.com/facebook/react/pull/12345
 
 # 在你的仓库中使用 PR 编号
 cd my-project
-pr-dump 123                              # 输出: pr-123.txt
-pr-dump -f markdown 456                  # 输出: pr-456.md
+pr-dump 123                              # 输出: pr-123.md
 pr-dump -o review.md 789                 # 输出: review.md
 
 # 精简 diff 模式 - 适合 LLM 已在项目目录的情况
@@ -113,32 +115,37 @@ pr-dump -d compact 789
 
 ## 输出示例
 
-```
-################################################################################
-# PULL REQUEST CONTEXT: #42
-################################################################################
+```markdown
+# Pull Request Context: #42
 
---- METADATA ---
+## 📋 Metadata
 PR Title: Add user authentication system
 PR Body: This PR implements JWT-based authentication...
 
---- ALL COMMENTS ---
-## Timeline Comments ##
-- Timeline comment from @developer1:
-  Looks good, but consider adding rate limiting...
+[File Changes]
+auth.go: Implement JWT middleware (+45/-0)
+router.go: Register auth routes (+12/-2)
 
-## Code Review Comments ##
-- Code comment from @reviewer on `auth.go` (line 25):
-  This function should handle edge cases...
+## 💬 All Comments
 
---- GIT DIFF ---
+### Timeline Comments
+
+- @developer1: Looks good, but consider adding rate limiting...
+
+### Code Review Comments
+
+#### `auth.go`
+
+- @reviewer (L25): This function should handle edge cases...
+- @author (L25): Good point, added nil check in latest commit.
+
+## 🔍 Git Diff
+
+```diff
 diff --git a/auth.go b/auth.go
-new file mode 100644
-index 0000000..abc1234
-+++ b/auth.go
-@@ -0,0 +1,45 @@
 +package auth
 ...
+```
 ```
 
 ## 使用场景

@@ -24,8 +24,10 @@ pr-dump 568
 ## Features
 
 - **Complete Context**: Fetches PR metadata, all comments, and git diff
-- **LLM-Ready**: Outputs structured text perfect for AI code review
+- **LLM-Ready**: Outputs structured markdown perfect for AI code review
 - **Bot-Free**: Automatically filters out bot comments
+- **HTML Noise Cleaning**: Strips bot-generated HTML tables, `&nbsp;`, and hash links from PR body; reformats File Walkthrough into compact plain text (on by default)
+- **Grouped Review Comments**: Code review comments grouped by file, preserving conversation order
 - **Fast**: Single command to gather everything you need
 - **Flexible Diff Modes**: Full, compact (paths + line numbers), or stat-only output
 
@@ -78,9 +80,10 @@ cd my-awesome-project
 pr-dump 123
 
 # Advanced options
-pr-dump --output custom.md --format markdown https://github.com/owner/repo/pull/456
+pr-dump --output custom.md https://github.com/owner/repo/pull/456
 pr-dump --diff-mode compact 123  # Paths + line numbers only
 pr-dump --diff-mode stat 123     # Statistics only
+pr-dump --no-clean-body 123      # Disable HTML noise cleaning
 pr-dump --verbose https://github.com/owner/repo/pull/789
 ```
 
@@ -92,8 +95,7 @@ pr-dump https://github.com/facebook/react/pull/12345
 
 # Number mode in your repository
 cd my-project
-pr-dump 123                              # Output: pr-123.txt
-pr-dump -f markdown 456                  # Output: pr-456.md
+pr-dump 123                              # Output: pr-123.md
 pr-dump -o review.md 789                 # Output: review.md
 
 # Compact diff mode - ideal when LLM is already in project directory
@@ -105,32 +107,37 @@ pr-dump -d compact 789
 
 ## Example Output
 
-```
-################################################################################
-# PULL REQUEST CONTEXT: #42
-################################################################################
+```markdown
+# Pull Request Context: #42
 
---- METADATA ---
+## 📋 Metadata
 PR Title: Add user authentication system
 PR Body: This PR implements JWT-based authentication...
 
---- ALL COMMENTS ---
-## Timeline Comments ##
-- Timeline comment from @developer1:
-  Looks good, but consider adding rate limiting...
+[File Changes]
+auth.go: Implement JWT middleware (+45/-0)
+router.go: Register auth routes (+12/-2)
 
-## Code Review Comments ##
-- Code comment from @reviewer on `auth.go` (line 25):
-  This function should handle edge cases...
+## 💬 All Comments
 
---- GIT DIFF ---
+### Timeline Comments
+
+- @developer1: Looks good, but consider adding rate limiting...
+
+### Code Review Comments
+
+#### `auth.go`
+
+- @reviewer (L25): This function should handle edge cases...
+- @author (L25): Good point, added nil check in latest commit.
+
+## 🔍 Git Diff
+
+```diff
 diff --git a/auth.go b/auth.go
-new file mode 100644
-index 0000000..abc1234
-+++ b/auth.go
-@@ -0,0 +1,45 @@
 +package auth
 ...
+```
 ```
 
 ## Use Cases
